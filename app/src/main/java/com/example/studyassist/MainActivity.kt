@@ -85,11 +85,11 @@ class MainActivity : ComponentActivity() {
     private val requestCameraPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
-                updateStatus("Camera permission granted. Starting preview...")
+                updateStatus("摄像头权限已授予。正在启动预览...")
                 startCamera()
             } else {
-                updateStatus("Camera permission denied. Preview is unavailable.")
-                Toast.makeText(this, "Camera permission is required.", Toast.LENGTH_LONG).show()
+                updateStatus("摄像头权限被拒绝。预览不可用。")
+                Toast.makeText(this, "需要摄像头权限才能使用。", Toast.LENGTH_LONG).show()
                 retryPermissionButton.isEnabled = true
             }
         }
@@ -102,7 +102,7 @@ class MainActivity : ComponentActivity() {
         if (hasCameraPermission()) {
             startCamera()
         } else {
-            updateStatus("Camera permission is required for live preview.")
+            updateStatus("需要摄像头权限才能预览。")
             requestCameraPermission.launch(Manifest.permission.CAMERA)
         }
     }
@@ -136,18 +136,18 @@ class MainActivity : ComponentActivity() {
             )
         }
 
-        statusText = sectionText("Preparing camera...", textSize = 15f)
+        statusText = sectionText("正在准备摄像头...", textSize = 15f)
         apiKeyInput = EditText(this).apply {
-            hint = "Paste DeepSeek API key here"
+            hint = "在此粘贴 DeepSeek API 密钥"
             setText(loadDeepSeekApiKey())
             textSize = 14f
             setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setPadding(16, 10, 16, 10)
         }
-        ocrText = sectionText("OCR text will appear here.")
-        translationText = sectionText("Chinese translation will appear here.")
-        analysisText = sectionText("DeepSeek study analysis will appear here.")
+        ocrText = sectionText("OCR 识别文字将显示在此处。")
+        translationText = sectionText("中文翻译将显示在此处。")
+        analysisText = sectionText("DeepSeek 学习分析将显示在此处。")
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -173,43 +173,43 @@ class MainActivity : ComponentActivity() {
         }
 
         toggleRecognitionButton = Button(this).apply {
-            text = "Pause OCR"
+            text = "暂停识别"
             layoutParams = controlLayoutParams()
         }
 
         saveApiKeyButton = Button(this).apply {
-            text = "Save API key"
+            text = "保存密钥"
             layoutParams = controlLayoutParams()
         }
 
         clearApiKeyButton = Button(this).apply {
-            text = "Clear API key"
+            text = "清除密钥"
             layoutParams = controlLayoutParams()
         }
 
         manualScanButton = Button(this).apply {
-            text = "Scan once"
+            text = "手动扫描"
             layoutParams = controlLayoutParams()
         }
 
         cancelAiButton = Button(this).apply {
-            text = "Cancel AI request"
+            text = "取消 AI 请求"
             isEnabled = false
             layoutParams = controlLayoutParams()
         }
 
         copyButton = Button(this).apply {
-            text = "Copy results"
+            text = "复制结果"
             layoutParams = controlLayoutParams()
         }
 
         clearButton = Button(this).apply {
-            text = "Clear results"
+            text = "清除结果"
             layoutParams = controlLayoutParams()
         }
 
         retryPermissionButton = Button(this).apply {
-            text = "Request permission again"
+            text = "重新请求权限"
             isEnabled = false
             layoutParams = controlLayoutParams()
         }
@@ -225,10 +225,10 @@ class MainActivity : ComponentActivity() {
 
         root.addView(previewView)
         content.addView(statusText)
-        content.addView(labeledSection("DeepSeek API Key", apiKeyInput, minHeight = 58))
-        content.addView(labeledSection("OCR Text", ocrText, minHeight = 130))
-        content.addView(labeledSection("Translation", translationText, minHeight = 110))
-        content.addView(labeledSection("Study Analysis", analysisText, minHeight = 220))
+        content.addView(labeledSection("DeepSeek API 密钥", apiKeyInput, minHeight = 58))
+        content.addView(labeledSection("OCR 识别结果", ocrText, minHeight = 130))
+        content.addView(labeledSection("中文翻译", translationText, minHeight = 110))
+        content.addView(labeledSection("学习分析", analysisText, minHeight = 220))
         content.addView(controls)
         root.addView(contentScroll)
         setContentView(root)
@@ -237,19 +237,19 @@ class MainActivity : ComponentActivity() {
     private fun bindControls() {
         toggleRecognitionButton.setOnClickListener {
             isRecognitionEnabled = !isRecognitionEnabled
-            toggleRecognitionButton.text = if (isRecognitionEnabled) "Pause OCR" else "Start OCR"
+            toggleRecognitionButton.text = if (isRecognitionEnabled) "暂停识别" else "开始识别"
             updateStatus(
                 if (isRecognitionEnabled) {
-                    "OCR is running with throttled frame analysis."
+                    "OCR 正在运行（限帧分析）。"
                 } else {
-                    "OCR is paused. Camera preview remains active."
+                    "OCR 已暂停。摄像头预览正常。"
                 },
             )
         }
 
         manualScanButton.setOnClickListener {
             lastAnalyzedAt = 0L
-            updateStatus("Waiting for the next camera frame to scan...")
+            updateStatus("等待下一帧摄像头画面进行扫描...")
         }
 
         saveApiKeyButton.setOnClickListener {
@@ -272,10 +272,10 @@ class MainActivity : ComponentActivity() {
             cancelAiRequest(showToast = false)
             lastRecognizedText = ""
             lastAiRequestedText = ""
-            ocrText.text = "OCR text will appear here."
-            translationText.text = "Chinese translation will appear here."
-            analysisText.text = "DeepSeek study analysis will appear here."
-            updateStatus("Results cleared.")
+            ocrText.text = "OCR 识别文字将显示在此处。"
+            translationText.text = "中文翻译将显示在此处。"
+            analysisText.text = "DeepSeek 学习分析将显示在此处。"
+            updateStatus("结果已清除。")
         }
 
         retryPermissionButton.setOnClickListener {
@@ -311,10 +311,10 @@ class MainActivity : ComponentActivity() {
 
                     cameraProvider = provider
                     retryPermissionButton.isEnabled = false
-                    updateStatus("Camera preview and OCR are running.")
+                    updateStatus("摄像头预览和 OCR 正在运行。")
                 } catch (error: Exception) {
-                    updateStatus("Camera failed: ${error.localizedMessage ?: "unknown error"}")
-                    Toast.makeText(this, "Failed to start camera.", Toast.LENGTH_LONG).show()
+                    updateStatus("摄像头启动失败：${error.localizedMessage ?: "未知错误"}")
+                    Toast.makeText(this, "启动摄像头失败。", Toast.LENGTH_LONG).show()
                 }
             },
             ContextCompat.getMainExecutor(this),
@@ -392,19 +392,19 @@ class MainActivity : ComponentActivity() {
             val cleanedText = mergeOcrText(latinText, chineseText)
             if (cleanedText.isBlank()) {
                 val errorText = listOfNotNull(latinError, chineseError)
-                    .joinToString("; ") { it.localizedMessage ?: "unknown OCR error" }
+                    .joinToString("; ") { it.localizedMessage ?: "未知 OCR 错误" }
                 updateOcrResult(
                     if (errorText.isBlank()) {
-                        "No clear text detected. Adjust angle or distance."
+                        "未检测到清晰文字。请调整拍摄角度或距离。"
                     } else {
-                        "OCR failed or found no text: $errorText"
+                        "OCR 识别失败或未找到文字：$errorText"
                     },
                 )
                 return
             }
 
             if (isSimilarText(cleanedText, lastRecognizedText)) {
-                updateStatus("OCR text is similar to the previous result. Skipping duplicate.")
+                updateStatus("OCR 文字与上次结果相似，跳过重复。")
                 return
             }
 
@@ -420,20 +420,20 @@ class MainActivity : ComponentActivity() {
     private fun handleRecognizedText(text: String) {
         when (classifyText(text)) {
             ContentKind.TOO_SHORT -> {
-                updateTranslation("Text is too short or incomplete. Adjust angle and scan again.")
-                updateAnalysis("Waiting for a clearer OCR result before calling DeepSeek.")
+                updateTranslation("文字过短或不完整。请调整角度后重新扫描。")
+                updateAnalysis("等待更清晰的 OCR 结果后再调用 DeepSeek。")
             }
             ContentKind.ENGLISH -> {
-                updateTranslation("English text detected. Requesting Chinese translation...")
+                updateTranslation("检测到英文内容，正在请求中文翻译...")
                 maybeRequestAi(text)
             }
             ContentKind.QUESTION -> {
-                updateTranslation("Question-like content detected. Requesting study analysis...")
+                updateTranslation("检测到题目类内容，正在请求学习分析...")
                 maybeRequestAi(text)
             }
             ContentKind.OTHER -> {
-                updateTranslation("Text detected, but it does not look like English text or a complete question yet.")
-                updateAnalysis("Keep the page steady or use Scan once when the full content is visible.")
+                updateTranslation("已检测到文字，但不像英文或完整题目。")
+                updateAnalysis("保持页面稳定，或在完整内容可见时使用「手动扫描」。")
             }
         }
     }
@@ -442,15 +442,15 @@ class MainActivity : ComponentActivity() {
         val apiKey = loadDeepSeekApiKey()
         if (apiKey.isEmpty()) {
             updateAnalysis(
-                "DeepSeek API key is missing. Paste your key in the API key field, tap Save API key, then scan again.",
+                "缺少 DeepSeek API 密钥。请在密钥输入框中粘贴密钥，点击「保存密钥」，然后重新扫描。",
             )
-            updateStatus("DeepSeek API key missing.")
+            updateStatus("缺少 DeepSeek API 密钥。")
             return
         }
 
         val now = System.currentTimeMillis()
         if (isSimilarText(text, lastAiRequestedText) && now - lastAiRequestedAt < AI_COOLDOWN_MS) {
-            updateStatus("DeepSeek request skipped by duplicate cooldown.")
+            updateStatus("DeepSeek 请求因重复冷却被跳过。")
             return
         }
 
@@ -461,8 +461,8 @@ class MainActivity : ComponentActivity() {
 
         currentAiCall?.cancel()
         cancelAiButton.isEnabled = true
-        updateAnalysis("Loading DeepSeek study response...")
-        updateStatus("Calling DeepSeek...")
+        updateAnalysis("正在加载 DeepSeek 学习分析...")
+        updateStatus("正在调用 DeepSeek...")
 
         val requestBody = JSONObject()
             .put("model", DEEPSEEK_MODEL)
@@ -495,8 +495,8 @@ class MainActivity : ComponentActivity() {
                 runOnUiThread {
                     if (requestVersion != aiRequestVersion) return@runOnUiThread
                     cancelAiButton.isEnabled = false
-                    updateStatus("Network request failed.")
-                    analysisText.text = "DeepSeek request failed: ${e.localizedMessage ?: "network error"}"
+                    updateStatus("网络请求失败。")
+                    analysisText.text = "DeepSeek 请求失败：${e.localizedMessage ?: "网络错误"}"
                 }
             }
 
@@ -506,8 +506,8 @@ class MainActivity : ComponentActivity() {
                     if (requestVersion != aiRequestVersion) return@runOnUiThread
                     cancelAiButton.isEnabled = false
                     if (!response.isSuccessful) {
-                        updateStatus("DeepSeek returned HTTP ${response.code}.")
-                        analysisText.text = "DeepSeek error ${response.code}: $responseText"
+                        updateStatus("DeepSeek 返回 HTTP ${response.code}。")
+                        analysisText.text = "DeepSeek 错误 ${response.code}：$responseText"
                         return@runOnUiThread
                     }
 
@@ -525,9 +525,9 @@ class MainActivity : ComponentActivity() {
         currentAiCall?.cancel()
         currentAiCall = null
         cancelAiButton.isEnabled = false
-        updateStatus("AI request canceled.")
+        updateStatus("AI 请求已取消。")
         if (showToast) {
-            Toast.makeText(this, "AI request canceled.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "AI 请求已取消。", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -600,7 +600,7 @@ class MainActivity : ComponentActivity() {
 
             val resultObject = JSONObject(content)
             val status = resultObject.optString("content_status", "DeepSeek response updated.")
-            val translation = resultObject.optString("chinese_translation", "No translation returned.")
+            val translation = resultObject.optString("chinese_translation", "未返回翻译。")
             val analysis = resultObject.optString("study_analysis", content)
             val suspicious = resultObject.optString("suspicious_ocr", "")
             StudyResult(
@@ -608,17 +608,17 @@ class MainActivity : ComponentActivity() {
                 analysis = buildString {
                     append(analysis.ifBlank { content })
                     if (suspicious.isNotBlank()) {
-                        append("\n\nOCR notes:\n")
+                        append("\n\nOCR 提示：\n")
                         append(suspicious)
                     }
                 },
-                status = "DeepSeek response updated: $status",
+                status = "DeepSeek 分析完成：$status",
             )
         } catch (error: Exception) {
             StudyResult(
-                translation = "DeepSeek response received, but JSON parsing failed.",
-                analysis = "Failed to parse DeepSeek response: ${error.localizedMessage ?: "unknown error"}\n\n$responseText",
-                status = "DeepSeek response parse failed.",
+                translation = "DeepSeek 已返回，但 JSON 解析失败。",
+                analysis = "无法解析 DeepSeek 响应：${error.localizedMessage ?: "未知错误"}\n\n$responseText",
+                status = "DeepSeek 响应解析失败。",
             )
         }
     }
@@ -674,7 +674,7 @@ class MainActivity : ComponentActivity() {
     private fun updateOcrResult(text: String) {
         runOnUiThread {
             ocrText.text = text
-            updateStatus("OCR updated.")
+            updateStatus("OCR 已更新。")
         }
     }
 
@@ -692,16 +692,16 @@ class MainActivity : ComponentActivity() {
 
     private fun copyResultsToClipboard() {
         val resultText = buildString {
-            append("OCR Text:\n")
+            append("OCR 识别结果：\n")
             append(ocrText.text)
-            append("\n\nTranslation:\n")
+            append("\n\n中文翻译：\n")
             append(translationText.text)
-            append("\n\nStudy Analysis:\n")
+            append("\n\n学习分析：\n")
             append(analysisText.text)
         }
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("Study Assist Result", resultText))
-        Toast.makeText(this, "Results copied.", Toast.LENGTH_SHORT).show()
+        clipboard.setPrimaryClip(ClipData.newPlainText("学习助手结果", resultText))
+        Toast.makeText(this, "结果已复制。", Toast.LENGTH_SHORT).show()
     }
 
     private fun saveDeepSeekApiKey() {
@@ -716,8 +716,8 @@ class MainActivity : ComponentActivity() {
             .putString(PREFERENCE_DEEPSEEK_API_KEY, apiKey)
             .apply()
         apiKeyInput.setText(apiKey)
-        updateStatus("DeepSeek API key saved on this device.")
-        Toast.makeText(this, "API key saved.", Toast.LENGTH_SHORT).show()
+        updateStatus("DeepSeek API 密钥已保存在本设备。")
+        Toast.makeText(this, "API 密钥已保存。", Toast.LENGTH_SHORT).show()
     }
 
     private fun clearDeepSeekApiKey() {
@@ -726,8 +726,8 @@ class MainActivity : ComponentActivity() {
             .remove(PREFERENCE_DEEPSEEK_API_KEY)
             .apply()
         apiKeyInput.text?.clear()
-        updateStatus("DeepSeek API key cleared.")
-        Toast.makeText(this, "API key cleared.", Toast.LENGTH_SHORT).show()
+        updateStatus("DeepSeek API 密钥已清除。")
+        Toast.makeText(this, "API 密钥已清除。", Toast.LENGTH_SHORT).show()
     }
 
     private fun loadDeepSeekApiKey(): String {
