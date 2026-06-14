@@ -1,7 +1,22 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use(::load)
+    }
+}
+val deepSeekApiKey = localProperties.getProperty("DEEPSEEK_API_KEY")
+    ?: System.getenv("DEEPSEEK_API_KEY")
+    ?: ""
+val escapedDeepSeekApiKey = deepSeekApiKey
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
 
 android {
     namespace = "com.example.studyassist"
@@ -13,10 +28,11 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("String", "DEEPSEEK_API_KEY", "\"$escapedDeepSeekApiKey\"")
     }
 
     buildFeatures {
-        buildConfig = false
+        buildConfig = true
     }
 
     compileOptions {
@@ -41,4 +57,5 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.squareup.okhttp3:okhttp:5.4.0")
 }
