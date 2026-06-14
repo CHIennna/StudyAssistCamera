@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.text.InputType
-import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -127,16 +126,18 @@ class MainActivity : ComponentActivity() {
             )
         }
 
+        // Preview takes 44% of screen — large enough to frame shots
         previewView = PreviewView(this).apply {
             implementationMode = PreviewView.ImplementationMode.PERFORMANCE
             scaleType = PreviewView.ScaleType.FILL_CENTER
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(280),
+                0,
+                0.44f,
             )
         }
 
-        statusText = sectionText("正在准备摄像头...", textSize = 15f)
+        statusText = sectionText("正在准备摄像头...", textSize = 13f)
         apiKeyInput = EditText(this).apply {
             hint = "在此粘贴 DeepSeek API 密钥"
             setText(loadDeepSeekApiKey())
@@ -144,92 +145,56 @@ class MainActivity : ComponentActivity() {
             setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setPadding(16, 10, 16, 10)
+            setBackgroundColor(0xFFFFFFFF.toInt())
         }
         ocrText = sectionText("OCR 识别文字将显示在此处。")
         translationText = sectionText("中文翻译将显示在此处。")
         analysisText = sectionText("DeepSeek 学习分析将显示在此处。")
 
+        // Scrollable content area takes remaining 56% of screen
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16, 10, 16, 18)
+            setPadding(10, 4, 10, 12)
         }
         val contentScroll = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
-                1f,
+                0.56f,
             )
             addView(content)
         }
 
-        val controls = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(0, 6, 0, 0)
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            )
-        }
-
-        toggleRecognitionButton = Button(this).apply {
-            text = "暂停识别"
-            layoutParams = controlLayoutParams()
-        }
-
-        saveApiKeyButton = Button(this).apply {
-            text = "保存密钥"
-            layoutParams = controlLayoutParams()
-        }
-
-        clearApiKeyButton = Button(this).apply {
-            text = "清除密钥"
-            layoutParams = controlLayoutParams()
-        }
-
-        manualScanButton = Button(this).apply {
-            text = "手动扫描"
-            layoutParams = controlLayoutParams()
-        }
-
-        cancelAiButton = Button(this).apply {
-            text = "取消 AI 请求"
-            isEnabled = false
-            layoutParams = controlLayoutParams()
-        }
-
-        copyButton = Button(this).apply {
-            text = "复制结果"
-            layoutParams = controlLayoutParams()
-        }
-
-        clearButton = Button(this).apply {
-            text = "清除结果"
-            layoutParams = controlLayoutParams()
-        }
-
+        // Buttons in 2-column grid — compact and easy to reach
+        toggleRecognitionButton = Button(this).apply { text = "暂停识别" }
+        saveApiKeyButton = Button(this).apply { text = "保存密钥" }
+        clearApiKeyButton = Button(this).apply { text = "清除密钥" }
+        manualScanButton = Button(this).apply { text = "手动扫描" }
+        cancelAiButton = Button(this).apply { text = "取消 AI 请求"; isEnabled = false }
+        copyButton = Button(this).apply { text = "复制结果" }
+        clearButton = Button(this).apply { text = "清除结果" }
         retryPermissionButton = Button(this).apply {
             text = "重新请求权限"
             isEnabled = false
-            layoutParams = controlLayoutParams()
         }
 
-        controls.addView(toggleRecognitionButton)
-        controls.addView(saveApiKeyButton)
-        controls.addView(clearApiKeyButton)
-        controls.addView(manualScanButton)
-        controls.addView(cancelAiButton)
-        controls.addView(copyButton)
-        controls.addView(clearButton)
-        controls.addView(retryPermissionButton)
+        val buttonGrid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 4, 0, 0)
+        }
+        buttonGrid.addView(buttonRow(toggleRecognitionButton, manualScanButton))
+        buttonGrid.addView(buttonRow(saveApiKeyButton, clearApiKeyButton))
+        buttonGrid.addView(buttonRow(cancelAiButton, copyButton))
+        buttonGrid.addView(buttonRow(clearButton, retryPermissionButton))
 
         root.addView(previewView)
         content.addView(statusText)
-        content.addView(labeledSection("DeepSeek API 密钥", apiKeyInput, minHeight = 58))
-        content.addView(labeledSection("OCR 识别结果", ocrText, minHeight = 130))
-        content.addView(labeledSection("中文翻译", translationText, minHeight = 110))
-        content.addView(labeledSection("学习分析", analysisText, minHeight = 220))
-        content.addView(controls)
+        content.addView(sectionLabel("DeepSeek API 密钥"))
+        content.addView(apiKeyInput)
+        content.addView(labeledSection("OCR 识别结果", ocrText, minHeight = 70))
+        content.addView(labeledSection("中文翻译", translationText, minHeight = 50))
+        content.addView(labeledSection("学习分析", analysisText, minHeight = 90))
+        content.addView(buttonGrid)
         root.addView(contentScroll)
         setContentView(root)
     }
@@ -353,32 +318,30 @@ class MainActivity : ComponentActivity() {
         var chineseText = ""
         var latinError: Exception? = null
         var chineseError: Exception? = null
+        var latinDone = false
+        var chineseDone = false
 
+        fun tryFinish() {
+            if (!latinDone || !chineseDone) return
+            finishOcrProcessing(
+                imageProxy = imageProxy,
+                latinText = latinText,
+                chineseText = chineseText,
+                latinError = latinError,
+                chineseError = chineseError,
+            )
+        }
+
+        // Run Latin and Chinese recognizers in parallel — cuts OCR time roughly in half
         latinTextRecognizer.process(inputImage)
-            .addOnSuccessListener { result: Text ->
-                latinText = result.text
-            }
-            .addOnFailureListener { error ->
-                latinError = error
-            }
-            .addOnCompleteListener {
-                chineseTextRecognizer.process(inputImage)
-                    .addOnSuccessListener { result: Text ->
-                        chineseText = result.text
-                    }
-                    .addOnFailureListener { error ->
-                        chineseError = error
-                    }
-                    .addOnCompleteListener {
-                        finishOcrProcessing(
-                            imageProxy = imageProxy,
-                            latinText = latinText,
-                            chineseText = chineseText,
-                            latinError = latinError,
-                            chineseError = chineseError,
-                        )
-                    }
-            }
+            .addOnSuccessListener { result -> latinText = result.text }
+            .addOnFailureListener { error -> latinError = error }
+            .addOnCompleteListener { latinDone = true; tryFinish() }
+
+        chineseTextRecognizer.process(inputImage)
+            .addOnSuccessListener { result -> chineseText = result.text }
+            .addOnFailureListener { error -> chineseError = error }
+            .addOnCompleteListener { chineseDone = true; tryFinish() }
     }
 
     private fun finishOcrProcessing(
@@ -475,7 +438,7 @@ class MainActivity : ComponentActivity() {
             .put("response_format", JSONObject().put("type", "json_object"))
             .put("thinking", JSONObject().put("type", "disabled"))
             .put("temperature", 0.2)
-            .put("max_tokens", 1800)
+            .put("max_tokens", 1024)
             .put("stream", false)
             .toString()
             .toRequestBody(JSON_MEDIA_TYPE)
@@ -753,20 +716,17 @@ class MainActivity : ComponentActivity() {
     private fun labeledSection(title: String, textView: TextView, minHeight: Int): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 8, 0, 0)
+            setPadding(0, 6, 0, 0)
             addView(sectionLabel(title))
-            addView(
-                ScrollView(this@MainActivity).apply {
-                    setBackgroundColor(0xFFFFFFFF.toInt())
-                    layoutParams = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        dp(minHeight),
-                    ).apply {
-                        setMargins(0, 4, 0, 0)
-                    }
-                    addView(textView)
-                },
-            )
+            textView.setBackgroundColor(0xFFFFFFFF.toInt())
+            textView.minHeight = dp(minHeight)
+            val params = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                setMargins(0, 2, 0, 0)
+            }
+            addView(textView, params)
         }
     }
 
@@ -789,12 +749,24 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun controlLayoutParams(): LinearLayout.LayoutParams {
-        return LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply {
-            setMargins(0, 8, 0, 0)
+    private fun buttonRow(left: Button, right: Button): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                setMargins(0, 4, 0, 0)
+            }
+            val half = LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f,
+            ).apply {
+                setMargins(3, 0, 3, 0)
+            }
+            addView(left, half)
+            addView(right, half)
         }
     }
 
@@ -816,8 +788,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
-        const val OCR_INTERVAL_MS = 1_500L
-        const val AI_COOLDOWN_MS = 20_000L
+        const val OCR_INTERVAL_MS = 1_100L
+        const val AI_COOLDOWN_MS = 12_000L
         const val MIN_USEFUL_TEXT_LENGTH = 12
         const val MIN_ENGLISH_LETTERS = 8
         const val ENGLISH_RATIO_THRESHOLD = 0.45f
