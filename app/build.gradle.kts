@@ -34,6 +34,13 @@ android {
         buildConfig = true
     }
 
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
