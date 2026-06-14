@@ -7,34 +7,53 @@ import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : ComponentActivity() {
     private lateinit var previewView: PreviewView
     private lateinit var statusText: TextView
+    private lateinit var ocrText: TextView
     private lateinit var toggleRecognitionButton: Button
     private lateinit var retryPermissionButton: Button
     private lateinit var manualScanButton: Button
+    private lateinit var clearButton: Button
+
+    private val cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private val textRecognizer: TextRecognizer =
+        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
     private var cameraProvider: ProcessCameraProvider? = null
     private var isRecognitionEnabled = true
+    private var lastAnalyzedAt = 0L
+    private var lastRecognizedText = ""
+    private val isOcrRunning = AtomicBoolean(false)
 
     private val requestCameraPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
-                updateStatus("摄像头权限已允许，正在启动预览")
+                updateStatus("Camera permission granted. Starting preview...")
                 startCamera()
             } else {
-                updateStatus("摄像头权限被拒绝，无法显示实时预览")
-                Toast.makeText(this, "请允许摄像头权限后再使用识别功能", Toast.LENGTH_LONG).show()
+                updateStatus("Camera permission denied. Preview is unavailable.")
+                Toast.makeText(this, "Camera permission is required.", Toast.LENGTH_LONG).show()
                 retryPermissionButton.isEnabled = true
             }
         }
@@ -47,7 +66,7 @@ class MainActivity : ComponentActivity() {
         if (hasCameraPermission()) {
             startCamera()
         } else {
-            updateStatus("需要摄像头权限才能显示实时预览")
+            updateStatus("Camera permission is required for live preview.")
             requestCameraPermission.launch(Manifest.permission.CAMERA)
         }
     }
@@ -55,6 +74,8 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         cameraProvider?.unbindAll()
         cameraProvider = null
+        textRecognizer.close()
+        cameraExecutor.shutdown()
         super.onDestroy()
     }
 
@@ -81,8 +102,24 @@ class MainActivity : ComponentActivity() {
         statusText = TextView(this).apply {
             textSize = 15f
             setTextColor(0xFF1F2937.toInt())
-            setPadding(24, 18, 24, 12)
-            text = "正在准备摄像头"
+            setPadding(24, 16, 24, 8)
+            text = "Preparing camera..."
+        }
+
+        ocrText = TextView(this).apply {
+            textSize = 14f
+            setTextColor(0xFF111827.toInt())
+            setPadding(24, 12, 24, 12)
+            text = "OCR text will appear here."
+        }
+
+        val ocrScroll = ScrollView(this).apply {
+            setBackgroundColor(0xFFFFFFFF.toInt())
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                220,
+            )
+            addView(ocrText)
         }
 
         val controls = LinearLayout(this).apply {
@@ -96,26 +133,33 @@ class MainActivity : ComponentActivity() {
         }
 
         toggleRecognitionButton = Button(this).apply {
-            text = "暂停识别"
+            text = "Pause OCR"
             layoutParams = controlLayoutParams()
         }
 
         manualScanButton = Button(this).apply {
-            text = "手动重新识别"
+            text = "Scan once"
+            layoutParams = controlLayoutParams()
+        }
+
+        clearButton = Button(this).apply {
+            text = "Clear text"
             layoutParams = controlLayoutParams()
         }
 
         retryPermissionButton = Button(this).apply {
-            text = "重新申请权限"
+            text = "Request permission again"
             isEnabled = false
             layoutParams = controlLayoutParams()
         }
 
         controls.addView(toggleRecognitionButton)
         controls.addView(manualScanButton)
+        controls.addView(clearButton)
         controls.addView(retryPermissionButton)
         root.addView(previewView)
         root.addView(statusText)
+        root.addView(ocrScroll)
         root.addView(controls)
         setContentView(root)
     }
@@ -123,18 +167,25 @@ class MainActivity : ComponentActivity() {
     private fun bindControls() {
         toggleRecognitionButton.setOnClickListener {
             isRecognitionEnabled = !isRecognitionEnabled
-            toggleRecognitionButton.text = if (isRecognitionEnabled) "暂停识别" else "开始识别"
+            toggleRecognitionButton.text = if (isRecognitionEnabled) "Pause OCR" else "Start OCR"
             updateStatus(
                 if (isRecognitionEnabled) {
-                    "摄像头预览运行中，OCR 会在下一阶段接入"
+                    "OCR is running with throttled frame analysis."
                 } else {
-                    "已暂停识别，摄像头预览仍保持运行"
+                    "OCR is paused. Camera preview remains active."
                 },
             )
         }
 
         manualScanButton.setOnClickListener {
-            Toast.makeText(this, "OCR 将在下一阶段接入", Toast.LENGTH_SHORT).show()
+            lastAnalyzedAt = 0L
+            updateStatus("Waiting for the next camera frame to scan...")
+        }
+
+        clearButton.setOnClickListener {
+            lastRecognizedText = ""
+            ocrText.text = "OCR text will appear here."
+            updateStatus("OCR result cleared.")
         }
 
         retryPermissionButton.setOnClickListener {
@@ -153,24 +204,94 @@ class MainActivity : ComponentActivity() {
                     val preview = Preview.Builder().build().also {
                         it.setSurfaceProvider(previewView.surfaceProvider)
                     }
+                    val analysis = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+                        .also { imageAnalysis ->
+                            imageAnalysis.setAnalyzer(cameraExecutor, ::analyzeImage)
+                        }
 
                     provider.unbindAll()
                     provider.bindToLifecycle(
                         this,
                         CameraSelector.DEFAULT_BACK_CAMERA,
                         preview,
+                        analysis,
                     )
 
                     cameraProvider = provider
                     retryPermissionButton.isEnabled = false
-                    updateStatus("摄像头预览已启动")
+                    updateStatus("Camera preview and OCR are running.")
                 } catch (error: Exception) {
-                    updateStatus("摄像头启动失败：${error.localizedMessage ?: "未知错误"}")
-                    Toast.makeText(this, "摄像头启动失败", Toast.LENGTH_LONG).show()
+                    updateStatus("Camera failed: ${error.localizedMessage ?: "unknown error"}")
+                    Toast.makeText(this, "Failed to start camera.", Toast.LENGTH_LONG).show()
                 }
             },
             ContextCompat.getMainExecutor(this),
         )
+    }
+
+    private fun analyzeImage(imageProxy: ImageProxy) {
+        val now = System.currentTimeMillis()
+        val shouldSkip = !isRecognitionEnabled ||
+            now - lastAnalyzedAt < OCR_INTERVAL_MS ||
+            !isOcrRunning.compareAndSet(false, true)
+
+        if (shouldSkip) {
+            imageProxy.close()
+            return
+        }
+
+        lastAnalyzedAt = now
+        val mediaImage = imageProxy.image
+        if (mediaImage == null) {
+            isOcrRunning.set(false)
+            imageProxy.close()
+            return
+        }
+
+        val inputImage = InputImage.fromMediaImage(
+            mediaImage,
+            imageProxy.imageInfo.rotationDegrees,
+        )
+
+        textRecognizer.process(inputImage)
+            .addOnSuccessListener { result ->
+                val cleanedText = cleanOcrText(result.text)
+                if (cleanedText.isBlank()) {
+                    updateOcrResult("No clear text detected. Adjust angle or distance.")
+                    return@addOnSuccessListener
+                }
+
+                if (cleanedText != lastRecognizedText) {
+                    lastRecognizedText = cleanedText
+                    updateOcrResult(cleanedText)
+                } else {
+                    updateStatus("OCR text unchanged. Skipping duplicate update.")
+                }
+            }
+            .addOnFailureListener { error ->
+                updateStatus("OCR failed: ${error.localizedMessage ?: "unknown error"}")
+            }
+            .addOnCompleteListener {
+                isOcrRunning.set(false)
+                imageProxy.close()
+            }
+    }
+
+    private fun cleanOcrText(rawText: String): String {
+        return rawText
+            .lines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString(separator = "\n")
+    }
+
+    private fun updateOcrResult(text: String) {
+        runOnUiThread {
+            ocrText.text = text
+            updateStatus("OCR updated.")
+        }
     }
 
     private fun hasCameraPermission(): Boolean {
@@ -181,7 +302,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun updateStatus(message: String) {
-        statusText.text = message
+        runOnUiThread {
+            statusText.text = message
+        }
     }
 
     private fun controlLayoutParams(): LinearLayout.LayoutParams {
@@ -191,5 +314,9 @@ class MainActivity : ComponentActivity() {
         ).apply {
             setMargins(0, 8, 0, 0)
         }
+    }
+
+    private companion object {
+        const val OCR_INTERVAL_MS = 1_500L
     }
 }
