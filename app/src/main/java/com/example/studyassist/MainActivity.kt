@@ -6,9 +6,11 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -46,11 +48,14 @@ import org.json.JSONObject
 class MainActivity : ComponentActivity() {
     private lateinit var previewView: PreviewView
     private lateinit var statusText: TextView
+    private lateinit var apiKeyInput: EditText
     private lateinit var ocrText: TextView
     private lateinit var translationText: TextView
     private lateinit var analysisText: TextView
     private lateinit var toggleRecognitionButton: Button
     private lateinit var retryPermissionButton: Button
+    private lateinit var saveApiKeyButton: Button
+    private lateinit var clearApiKeyButton: Button
     private lateinit var manualScanButton: Button
     private lateinit var cancelAiButton: Button
     private lateinit var copyButton: Button
@@ -132,6 +137,14 @@ class MainActivity : ComponentActivity() {
         }
 
         statusText = sectionText("Preparing camera...", textSize = 15f)
+        apiKeyInput = EditText(this).apply {
+            hint = "Paste DeepSeek API key here"
+            setText(loadDeepSeekApiKey())
+            textSize = 14f
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setPadding(16, 10, 16, 10)
+        }
         ocrText = sectionText("OCR text will appear here.")
         translationText = sectionText("Chinese translation will appear here.")
         analysisText = sectionText("DeepSeek study analysis will appear here.")
@@ -164,6 +177,16 @@ class MainActivity : ComponentActivity() {
             layoutParams = controlLayoutParams()
         }
 
+        saveApiKeyButton = Button(this).apply {
+            text = "Save API key"
+            layoutParams = controlLayoutParams()
+        }
+
+        clearApiKeyButton = Button(this).apply {
+            text = "Clear API key"
+            layoutParams = controlLayoutParams()
+        }
+
         manualScanButton = Button(this).apply {
             text = "Scan once"
             layoutParams = controlLayoutParams()
@@ -192,6 +215,8 @@ class MainActivity : ComponentActivity() {
         }
 
         controls.addView(toggleRecognitionButton)
+        controls.addView(saveApiKeyButton)
+        controls.addView(clearApiKeyButton)
         controls.addView(manualScanButton)
         controls.addView(cancelAiButton)
         controls.addView(copyButton)
@@ -200,6 +225,7 @@ class MainActivity : ComponentActivity() {
 
         root.addView(previewView)
         content.addView(statusText)
+        content.addView(labeledSection("DeepSeek API Key", apiKeyInput, minHeight = 58))
         content.addView(labeledSection("OCR Text", ocrText, minHeight = 130))
         content.addView(labeledSection("Translation", translationText, minHeight = 110))
         content.addView(labeledSection("Study Analysis", analysisText, minHeight = 220))
@@ -224,6 +250,14 @@ class MainActivity : ComponentActivity() {
         manualScanButton.setOnClickListener {
             lastAnalyzedAt = 0L
             updateStatus("Waiting for the next camera frame to scan...")
+        }
+
+        saveApiKeyButton.setOnClickListener {
+            saveDeepSeekApiKey()
+        }
+
+        clearApiKeyButton.setOnClickListener {
+            clearDeepSeekApiKey()
         }
 
         cancelAiButton.setOnClickListener {
@@ -405,11 +439,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun maybeRequestAi(text: String) {
-        val apiKey = BuildConfig.DEEPSEEK_API_KEY.trim()
+        val apiKey = loadDeepSeekApiKey()
         if (apiKey.isEmpty()) {
             updateAnalysis(
-                "DeepSeek API key is missing. Add DEEPSEEK_API_KEY=your_key to local.properties " +
-                    "or set the DEEPSEEK_API_KEY environment variable, then sync Gradle.",
+                "DeepSeek API key is missing. Paste your key in the API key field, tap Save API key, then scan again.",
             )
             updateStatus("DeepSeek API key missing.")
             return
@@ -671,6 +704,39 @@ class MainActivity : ComponentActivity() {
         Toast.makeText(this, "Results copied.", Toast.LENGTH_SHORT).show()
     }
 
+    private fun saveDeepSeekApiKey() {
+        val apiKey = apiKeyInput.text.toString().trim()
+        if (apiKey.isEmpty()) {
+            clearDeepSeekApiKey()
+            return
+        }
+
+        getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(PREFERENCE_DEEPSEEK_API_KEY, apiKey)
+            .apply()
+        apiKeyInput.setText(apiKey)
+        updateStatus("DeepSeek API key saved on this device.")
+        Toast.makeText(this, "API key saved.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun clearDeepSeekApiKey() {
+        getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .remove(PREFERENCE_DEEPSEEK_API_KEY)
+            .apply()
+        apiKeyInput.text?.clear()
+        updateStatus("DeepSeek API key cleared.")
+        Toast.makeText(this, "API key cleared.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun loadDeepSeekApiKey(): String {
+        return getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            .getString(PREFERENCE_DEEPSEEK_API_KEY, "")
+            .orEmpty()
+            .trim()
+    }
+
     private fun hasCameraPermission(): Boolean {
         return ContextCompat.checkSelfPermission(
             this,
@@ -757,6 +823,8 @@ class MainActivity : ComponentActivity() {
         const val ENGLISH_RATIO_THRESHOLD = 0.45f
         const val DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
         const val DEEPSEEK_MODEL = "deepseek-v4-flash"
+        const val PREFERENCES_NAME = "study_assist_preferences"
+        const val PREFERENCE_DEEPSEEK_API_KEY = "deepseek_api_key"
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         val OPTION_PATTERN = Regex("""(?im)(^|\n)\s*[A-D][\).: ]""")
         val MATH_PATTERN = Regex("""[0-9]\s*[+\-*/=^]\s*[0-9a-zA-Z(]""")
