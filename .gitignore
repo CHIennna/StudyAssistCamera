@@ -6,3 +6,4 @@ build/
 local.properties
 
 app/build/
+release-artifacts/
