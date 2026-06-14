@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Rect
 import android.os.Bundle
 import android.text.InputType
 import android.view.ViewGroup
@@ -305,15 +306,47 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        val inputImage = InputImage.fromMediaImage(
-            mediaImage,
-            imageProxy.imageInfo.rotationDegrees,
-        )
+        val rotation = imageProxy.imageInfo.rotationDegrees
+        val inputImage = InputImage.fromMediaImage(mediaImage, rotation)
 
-        recognizeLatinThenChinese(inputImage, imageProxy)
+        // Calculate visible crop area — FILL_CENTER shows only a centre crop
+        val visibleRect = visibleRectForPreview(imageProxy, rotation)
+
+        recognizeLatinThenChinese(inputImage, imageProxy, visibleRect)
     }
 
-    private fun recognizeLatinThenChinese(inputImage: InputImage, imageProxy: ImageProxy) {
+    /** Returns the sensor region actually visible in the FILL_CENTER preview. */
+    private fun visibleRectForPreview(imageProxy: ImageProxy, rotation: Int): Rect? {
+        val viewW = previewView.width
+        val viewH = previewView.height
+        if (viewW <= 0 || viewH <= 0) return null
+
+        val (imgW, imgH) = if (rotation == 90 || rotation == 270) {
+            imageProxy.height to imageProxy.width
+        } else {
+            imageProxy.width to imageProxy.height
+        }
+
+        val imageRatio = imgW.toFloat() / imgH
+        val viewRatio = viewW.toFloat() / viewH
+        if (Math.abs(imageRatio - viewRatio) < 0.03f) return null // negligible crop
+
+        return if (viewRatio > imageRatio) {
+            // View wider than sensor — crop top & bottom
+            val cropH = (imgW / viewRatio).toInt().coerceAtMost(imgH)
+            Rect(0, (imgH - cropH) / 2, imgW, (imgH + cropH) / 2)
+        } else {
+            // View taller than sensor — crop left & right
+            val cropW = (imgH * viewRatio).toInt().coerceAtMost(imgW)
+            Rect((imgW - cropW) / 2, 0, (imgW + cropW) / 2, imgH)
+        }
+    }
+
+    private fun recognizeLatinThenChinese(
+        inputImage: InputImage,
+        imageProxy: ImageProxy,
+        visibleRect: Rect?,
+    ) {
         var latinText = ""
         var chineseText = ""
         var latinError: Exception? = null
@@ -334,14 +367,31 @@ class MainActivity : ComponentActivity() {
 
         // Run Latin and Chinese recognizers in parallel — cuts OCR time roughly in half
         latinTextRecognizer.process(inputImage)
-            .addOnSuccessListener { result -> latinText = result.text }
+            .addOnSuccessListener { result ->
+                latinText = visibleTextOnly(result, visibleRect)
+            }
             .addOnFailureListener { error -> latinError = error }
             .addOnCompleteListener { latinDone = true; tryFinish() }
 
         chineseTextRecognizer.process(inputImage)
-            .addOnSuccessListener { result -> chineseText = result.text }
+            .addOnSuccessListener { result ->
+                chineseText = visibleTextOnly(result, visibleRect)
+            }
             .addOnFailureListener { error -> chineseError = error }
             .addOnCompleteListener { chineseDone = true; tryFinish() }
+    }
+
+    /** Keep only text blocks whose bounding box intersects the visible preview area. */
+    private fun visibleTextOnly(result: Text, visibleRect: Rect?): String {
+        if (visibleRect == null) return result.text
+        val blocks = result.textBlocks
+        if (blocks.isEmpty()) return result.text
+        val visible = blocks.filter { block ->
+            val box = block.boundingBox ?: return@filter true
+            Rect.intersects(box, visibleRect)
+        }
+        if (visible.isEmpty()) return result.text // safety: never return empty if ML Kit found text
+        return visible.joinToString("\n") { it.text }
     }
 
     private fun finishOcrProcessing(
